@@ -283,6 +283,24 @@ func cloneManifest(manifest aurora.Manifest) aurora.Manifest {
 		out.Capabilities[i] = capability
 		out.Capabilities[i].Settings = append(json.RawMessage(nil), capability.Settings...)
 	}
+	out.Children = cloneChildren(manifest.Children)
+	return out
+}
+
+func cloneChildren(children []aurora.ChildManifest) []aurora.ChildManifest {
+	if len(children) == 0 {
+		return nil
+	}
+	out := make([]aurora.ChildManifest, len(children))
+	for i, child := range children {
+		out[i] = child
+		out[i].Capabilities = make([]aurora.CapabilityConfig, len(child.Capabilities))
+		for j, cap := range child.Capabilities {
+			out[i].Capabilities[j] = cap
+			out[i].Capabilities[j].Settings = append(json.RawMessage(nil), cap.Settings...)
+		}
+		out[i].Children = cloneChildren(child.Children)
+	}
 	return out
 }
 
