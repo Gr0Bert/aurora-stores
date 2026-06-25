@@ -126,6 +126,17 @@ func (s *Store) ForkJournal(_ context.Context, parent, child aurora.RunContext, 
 	return nil
 }
 
+// ForkInfo reports the fork offset for a revision and whether it is a fork.
+func (s *Store) ForkInfo(_ context.Context, scope aurora.RunContext) (int, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	journal := s.journals[scope.SessionKey()]
+	if journal == nil || journal.parent == nil {
+		return 0, false, nil
+	}
+	return journal.offset, true, nil
+}
+
 func (s *Store) Close() error {
 	return nil
 }
@@ -300,6 +311,7 @@ func cloneStoredRun(run aurora.StoredRun) aurora.StoredRun {
 	run.StartedAt = copyTime(run.StartedAt)
 	run.CompletedAt = copyTime(run.CompletedAt)
 	run.ChildRunIDs = append([]string(nil), run.ChildRunIDs...)
+	run.ChildSpawnOffsets = append([]int(nil), run.ChildSpawnOffsets...)
 	return run
 }
 

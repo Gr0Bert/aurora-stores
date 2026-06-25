@@ -71,6 +71,8 @@ CREATE TABLE IF NOT EXISTS runs (
 	brain_digest TEXT NOT NULL DEFAULT '',
 	parent_run_id TEXT NOT NULL DEFAULT '',
 	child_run_ids BLOB,
+	child_spawn_offsets BLOB,
+	failure_offset INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (tenant_id, id),
 	FOREIGN KEY (tenant_id, thread_id) REFERENCES threads(tenant_id, id)
 );
@@ -198,12 +200,16 @@ func (s *Store) SaveRun(ctx context.Context, run aurora.StoredRun) error {
 	if err != nil {
 		return err
 	}
+	childSpawnOffsets, err := json.Marshal(run.ChildSpawnOffsets)
+	if err != nil {
+		return err
+	}
 	_, err = s.db.ExecContext(ctx, `
 INSERT INTO runs (
 	tenant_id,id,thread_id,revision,message,status,attempt,created_at,updated_at,
 	started_at,completed_at,answer,error_text,effective_manifest,brain_digest,
-	parent_run_id,child_run_ids
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	parent_run_id,child_run_ids,child_spawn_offsets,failure_offset
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(tenant_id,id) DO UPDATE SET
 	revision=excluded.revision,
 	status=excluded.status,
@@ -216,11 +222,14 @@ ON CONFLICT(tenant_id,id) DO UPDATE SET
 	effective_manifest=excluded.effective_manifest,
 	brain_digest=excluded.brain_digest,
 	parent_run_id=excluded.parent_run_id,
-	child_run_ids=excluded.child_run_ids`,
+	child_run_ids=excluded.child_run_ids,
+	child_spawn_offsets=excluded.child_spawn_offsets,
+	failure_offset=excluded.failure_offset`,
 		run.TenantID, run.ID, run.ThreadID, run.Revision, run.Message, run.Status,
 		run.Attempt, formatTime(run.CreatedAt), formatTime(run.UpdatedAt),
 		nullableTime(run.StartedAt), nullableTime(run.CompletedAt), run.Answer,
-		run.Error, manifest, run.BrainDigest, run.ParentRunID, childRunIDs)
+		run.Error, manifest, run.BrainDigest, run.ParentRunID, childRunIDs,
+		childSpawnOffsets, run.FailureOffset)
 	return err
 }
 
@@ -267,6 +276,21 @@ func (s *Store) ForkJournal(ctx context.Context, parent, child aurora.RunContext
 		VALUES (?,?,?,?,?)`,
 		child.TenantID, child.RunID, child.Revision, parent.Revision, offset)
 	return err
+}
+
+// ForkInfo reports the fork offset for a revision and whether it is a fork.
+func (s *Store) ForkInfo(ctx context.Context, scope aurora.RunContext) (int, bool, error) {
+	var offset int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT fork_offset FROM journal_forks WHERE tenant_id=? AND run_id=? AND revision=?`,
+		scope.TenantID, scope.RunID, scope.Revision).Scan(&offset)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return offset, true, nil
 }
 
 func (s *Store) AcquireLease(
@@ -450,7 +474,7 @@ func (s *Store) loadRuns(ctx context.Context, tenantID string) ([]aurora.StoredR
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id,thread_id,revision,message,status,attempt,created_at,updated_at,
 	started_at,completed_at,answer,error_text,effective_manifest,brain_digest,
-	parent_run_id,child_run_ids
+	parent_run_id,child_run_ids,child_spawn_offsets,failure_offset
 FROM runs WHERE tenant_id=? ORDER BY created_at`, tenantID)
 	if err != nil {
 		return nil, err
@@ -463,16 +487,23 @@ FROM runs WHERE tenant_id=? ORDER BY created_at`, tenantID)
 		var started, completed sql.NullString
 		var manifest []byte
 		var childRunIDs []byte
+		var childSpawnOffsets []byte
 		run.TenantID = tenantID
 		if err := rows.Scan(
 			&run.ID, &run.ThreadID, &run.Revision, &run.Message, &run.Status,
 			&run.Attempt, &created, &updated, &started, &completed, &run.Answer,
 			&run.Error, &manifest, &run.BrainDigest, &run.ParentRunID, &childRunIDs,
+			&childSpawnOffsets, &run.FailureOffset,
 		); err != nil {
 			return nil, err
 		}
 		if len(childRunIDs) > 0 {
 			if err := json.Unmarshal(childRunIDs, &run.ChildRunIDs); err != nil {
+				return nil, err
+			}
+		}
+		if len(childSpawnOffsets) > 0 {
+			if err := json.Unmarshal(childSpawnOffsets, &run.ChildSpawnOffsets); err != nil {
 				return nil, err
 			}
 		}
