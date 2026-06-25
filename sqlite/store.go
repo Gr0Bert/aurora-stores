@@ -69,6 +69,8 @@ CREATE TABLE IF NOT EXISTS runs (
 	error_text TEXT NOT NULL DEFAULT '',
 	effective_manifest BLOB NOT NULL,
 	brain_digest TEXT NOT NULL DEFAULT '',
+	parent_run_id TEXT NOT NULL DEFAULT '',
+	child_run_ids BLOB,
 	PRIMARY KEY (tenant_id, id),
 	FOREIGN KEY (tenant_id, thread_id) REFERENCES threads(tenant_id, id)
 );
@@ -192,11 +194,16 @@ func (s *Store) SaveRun(ctx context.Context, run aurora.StoredRun) error {
 	if err != nil {
 		return err
 	}
+	childRunIDs, err := json.Marshal(run.ChildRunIDs)
+	if err != nil {
+		return err
+	}
 	_, err = s.db.ExecContext(ctx, `
 INSERT INTO runs (
 	tenant_id,id,thread_id,revision,message,status,attempt,created_at,updated_at,
-	started_at,completed_at,answer,error_text,effective_manifest,brain_digest
-) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+	started_at,completed_at,answer,error_text,effective_manifest,brain_digest,
+	parent_run_id,child_run_ids
+) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(tenant_id,id) DO UPDATE SET
 	revision=excluded.revision,
 	status=excluded.status,
@@ -207,11 +214,13 @@ ON CONFLICT(tenant_id,id) DO UPDATE SET
 	answer=excluded.answer,
 	error_text=excluded.error_text,
 	effective_manifest=excluded.effective_manifest,
-	brain_digest=excluded.brain_digest`,
+	brain_digest=excluded.brain_digest,
+	parent_run_id=excluded.parent_run_id,
+	child_run_ids=excluded.child_run_ids`,
 		run.TenantID, run.ID, run.ThreadID, run.Revision, run.Message, run.Status,
 		run.Attempt, formatTime(run.CreatedAt), formatTime(run.UpdatedAt),
 		nullableTime(run.StartedAt), nullableTime(run.CompletedAt), run.Answer,
-		run.Error, manifest, run.BrainDigest)
+		run.Error, manifest, run.BrainDigest, run.ParentRunID, childRunIDs)
 	return err
 }
 
@@ -440,7 +449,8 @@ FROM threads WHERE tenant_id=? ORDER BY created_at`, tenantID)
 func (s *Store) loadRuns(ctx context.Context, tenantID string) ([]aurora.StoredRun, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id,thread_id,revision,message,status,attempt,created_at,updated_at,
-	started_at,completed_at,answer,error_text,effective_manifest,brain_digest
+	started_at,completed_at,answer,error_text,effective_manifest,brain_digest,
+	parent_run_id,child_run_ids
 FROM runs WHERE tenant_id=? ORDER BY created_at`, tenantID)
 	if err != nil {
 		return nil, err
@@ -452,13 +462,19 @@ FROM runs WHERE tenant_id=? ORDER BY created_at`, tenantID)
 		var created, updated string
 		var started, completed sql.NullString
 		var manifest []byte
+		var childRunIDs []byte
 		run.TenantID = tenantID
 		if err := rows.Scan(
 			&run.ID, &run.ThreadID, &run.Revision, &run.Message, &run.Status,
 			&run.Attempt, &created, &updated, &started, &completed, &run.Answer,
-			&run.Error, &manifest, &run.BrainDigest,
+			&run.Error, &manifest, &run.BrainDigest, &run.ParentRunID, &childRunIDs,
 		); err != nil {
 			return nil, err
+		}
+		if len(childRunIDs) > 0 {
+			if err := json.Unmarshal(childRunIDs, &run.ChildRunIDs); err != nil {
+				return nil, err
+			}
 		}
 		if run.CreatedAt, err = parseTime(created); err != nil {
 			return nil, err

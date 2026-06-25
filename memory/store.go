@@ -299,6 +299,7 @@ func cloneStoredRun(run aurora.StoredRun) aurora.StoredRun {
 	run.EffectiveManifest = cloneManifest(run.EffectiveManifest)
 	run.StartedAt = copyTime(run.StartedAt)
 	run.CompletedAt = copyTime(run.CompletedAt)
+	run.ChildRunIDs = append([]string(nil), run.ChildRunIDs...)
 	return run
 }
 
