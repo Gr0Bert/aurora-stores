@@ -1,15 +1,15 @@
-module aurora-stores
+module github.com/aurora-capcompute/aurora-stores
 
 go 1.26
 
 require (
-	aurora-capcompute v0.0.0
-	capcompute v0.0.0
+	github.com/aurora-capcompute/aurora-capcompute v0.0.0-00010101000000-000000000000
+	github.com/aurora-capcompute/capcompute v0.0.0-00010101000000-000000000000
 	github.com/mattn/go-sqlite3 v1.14.46
 )
 
 require (
-	aurora-dispatchers v0.0.0 // indirect
+	github.com/aurora-capcompute/aurora-dispatchers v0.0.0-00010101000000-000000000000 // indirect
 	github.com/dylibso/observe-sdk/go v0.0.0-20240819160327-2d926c5d788a // indirect
 	github.com/extism/go-pdk v1.1.3 // indirect
 	github.com/extism/go-sdk v1.7.1 // indirect
@@ -21,8 +21,5 @@ require (
 	google.golang.org/protobuf v1.34.2 // indirect
 )
 
-replace aurora-capcompute => ../aurora-capcompute
 
-replace aurora-dispatchers => ../aurora-dispatchers
 
-replace capcompute => ../capcompute

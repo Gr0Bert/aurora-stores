@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 	_ "github.com/mattn/go-sqlite3"
 )
 

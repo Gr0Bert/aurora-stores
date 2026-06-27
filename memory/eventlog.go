@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 )
 
 var (

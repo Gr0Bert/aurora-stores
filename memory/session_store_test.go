@@ -1,7 +1,7 @@
 package memory
 
 import (
-	"capcompute"
+	"github.com/aurora-capcompute/capcompute"
 	"context"
 	"testing"
 )

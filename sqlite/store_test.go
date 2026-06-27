@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"aurora-capcompute/aurora"
+	"github.com/aurora-capcompute/aurora-capcompute/aurora"
 )
 
 func TestEventLogAppendReadDurable(t *testing.T) {
